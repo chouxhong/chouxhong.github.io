@@ -2,31 +2,47 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>PPT 智能批量填字工具</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     
     <style>
-        body { font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif; background-color: #f9fafb; }
+        body { 
+            font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif; 
+            background-color: #f9fafb;
+            min-height: 100vh;
+        }
+
         .loading-overlay {
             background: rgba(255, 255, 255, 0.95);
             z-index: 100;
         }
-        canvas { border: 1px solid #e5e7eb; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
-        /* Custom scrollbar for desktop */
+        
+        canvas { 
+            border: 1px solid #e5e7eb; 
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); 
+        }
+
+        /* 桌面端滚动条样式优化，但不再锁定body高度 */
         @media (min-width: 1024px) {
             ::-webkit-scrollbar { width: 8px; height: 8px; }
             ::-webkit-scrollbar-track { background: #f1f1f1; }
             ::-webkit-scrollbar-thumb { background: #c1c1c1; border-radius: 4px; }
             ::-webkit-scrollbar-thumb:hover { background: #a8a8a8; }
         }
+
+        .modal-enter { opacity: 0; transform: scale(0.95); }
+        .modal-enter-active { opacity: 1; transform: scale(1); transition: all 0.2s ease-out; }
+        .modal-leave { opacity: 0; transform: scale(0.95); transition: all 0.2s ease-in; }
     </style>
 </head>
-<body class="h-screen flex flex-col overflow-hidden text-gray-800">
+
+<body class="flex flex-col text-gray-800">
 
     <!-- Header -->
-    <header class="bg-white shadow-sm z-30 px-4 py-3 flex-none">
+    <!-- 桌面端设为 relative，随页面滚动而滚动，给侧边栏腾出全屏空间 -->
+    <header class="bg-white shadow-sm z-30 px-4 py-3 flex-none sticky top-0 lg:relative">
         <div class="max-w-7xl mx-auto flex justify-between items-center">
             <h1 class="text-lg md:text-xl font-bold text-gray-800 flex items-center gap-2 truncate">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-blue-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -34,17 +50,22 @@
                 </svg>
                 <span class="truncate">PPT 智能批量填字</span>
             </h1>
-            <button onclick="resetApp()" class="text-xs md:text-sm text-red-500 hover:text-red-700 whitespace-nowrap ml-4">重置/清空</button>
+            <div class="flex items-center gap-4">
+                <span id="ocrStatus" class="text-xs text-gray-400 flex items-center gap-1">
+                    <span class="w-2 h-2 rounded-full bg-yellow-400 animate-pulse"></span>
+                    引擎加载中...
+                </span>
+                <button onclick="resetApp()" class="text-xs md:text-sm text-red-500 hover:text-red-700 whitespace-nowrap">重置/清空</button>
+            </div>
         </div>
     </header>
 
     <!-- Main Content -->
-    <!-- Mobile: Overflow-y-auto (scroll whole page), Desktop: Overflow-hidden (split panes scroll independently) -->
-    <main class="flex-1 flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden relative bg-gray-50">
+    <main class="flex-1 flex flex-col lg:flex-row relative bg-gray-50">
         
-        <!-- Sidebar: Controls -->
-        <!-- Mobile: w-full, auto height. Desktop: w-1/3, full height, scrollable -->
-        <div class="w-full lg:w-1/3 lg:min-w-[360px] bg-white border-b lg:border-b-0 lg:border-r border-gray-200 flex flex-col p-4 md:p-6 gap-5 shadow-sm z-20 flex-shrink-0 lg:h-full lg:overflow-y-auto">
+        <!-- Sidebar -->
+        <!-- 桌面端优化：lg:sticky lg:top-0 lg:h-screen lg:overflow-y-auto -->
+        <div class="w-full lg:w-1/3 lg:min-w-[360px] bg-white border-b lg:border-b-0 lg:border-r border-gray-200 flex flex-col p-4 md:p-6 gap-5 shadow-sm z-20 flex-shrink-0 lg:sticky lg:top-0 lg:h-screen lg:overflow-y-auto">
             
             <!-- Step 1: PPT Template -->
             <div class="space-y-3">
@@ -56,18 +77,20 @@
                     <span id="pptStatus" class="text-xs px-2 py-1 rounded bg-gray-100 text-gray-500">未就绪</span>
                 </div>
                 
-                <div id="pptUploadArea" class="border-2 border-dashed border-blue-200 rounded-lg p-6 text-center hover:bg-blue-50 transition cursor-pointer relative bg-blue-50/30">
-                    <input type="file" id="pptInput" accept=".pptx" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer">
-                    <div class="text-blue-500 mb-2">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                <div id="pptUploadArea" class="border-2 border-dashed border-blue-200 rounded-lg p-6 text-center hover:bg-blue-50 transition cursor-pointer relative bg-blue-50/30 active:bg-blue-100 group">
+                    <input type="file" id="pptInput" accept=".pptx,application/vnd.openxmlformats-officedocument.presentationml.presentation" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10">
+                    <div class="text-blue-500 mb-2 group-hover:scale-110 transition-transform">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                         </svg>
                     </div>
-                    <p class="text-sm text-gray-600 font-medium">点击上传 .pptx</p>
-                    <p class="text-xs text-gray-400 mt-1">需含“营服名称”文本框</p>
+                    <p class="text-sm text-gray-700 font-bold mb-1">📂 打开文件选择器导入 PPT</p>
+                    <div class="text-xs text-gray-500 leading-relaxed bg-white/60 p-2 rounded">
+                        <p class="mb-1">💡 <span class="text-blue-600 font-medium">微信/QQ文件导入技巧：</span></p>
+                        <p>请先在聊天中打开文件，点击右上角<span class="font-bold">“...”</span>选择<span class="font-bold">“另存为”</span>或<span class="font-bold">“保存到手机”</span>，然后在此处选择。</p>
+                    </div>
                 </div>
                 
-                <!-- Parsed Info Display -->
                 <div id="pptInfo" class="hidden text-sm bg-green-50 p-3 rounded border border-green-100 text-green-800 flex justify-between items-center">
                     <span>✅ 模板已加载</span>
                     <button onclick="document.getElementById('pptInput').click()" class="text-xs text-green-600 underline">重新上传</button>
@@ -80,7 +103,7 @@
                     <span class="bg-indigo-100 text-indigo-800 text-xs font-bold px-2 py-0.5 rounded-full">2</span>
                     名单识别
                 </h2>
-                <div class="border-2 border-dashed border-indigo-200 rounded-lg p-4 md:p-6 text-center hover:bg-indigo-50 transition cursor-pointer relative bg-indigo-50/30">
+                <div class="border-2 border-dashed border-indigo-200 rounded-lg p-4 md:p-6 text-center hover:bg-indigo-50 transition cursor-pointer relative bg-indigo-50/30 active:bg-indigo-100">
                     <input type="file" id="ocrInput" accept="image/*" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer">
                     <div class="text-indigo-500 mb-2">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -91,7 +114,6 @@
                     <p class="text-sm text-gray-600 font-medium">拍照/上传名单图片</p>
                 </div>
                 
-                <!-- OCR Result Text Area -->
                 <div>
                     <div class="flex justify-between items-center mb-1">
                         <label class="text-xs text-gray-500">名单列表 (已自动优化):</label>
@@ -101,21 +123,30 @@
                 </div>
             </div>
 
-            <!-- Step 3: Action -->
+            <!-- Step 3: Blessing Template -->
+            <div class="space-y-3">
+                <h2 class="text-base md:text-lg font-semibold text-gray-700 flex items-center gap-2">
+                    <span class="bg-purple-100 text-purple-800 text-xs font-bold px-2 py-0.5 rounded-full">3</span>
+                    祝福语模板
+                </h2>
+                <div>
+                    <textarea id="blessingTemplate" class="w-full h-20 p-3 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-purple-500 focus:outline-none resize-none shadow-inner" placeholder="输入模板...">恭喜XXX营服当日高套封闭[庆祝][庆祝][庆祝]</textarea>
+                    <p class="text-[10px] text-gray-400 mt-1 pl-1">👉 XXX 将替换为名字 (如列表有"营服"后缀会自动去重)</p>
+                </div>
+            </div>
+
             <button id="generateBtn" disabled class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 rounded-xl shadow-lg transition active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100 mb-4 lg:mb-0">
                 🚀 开始批量生成 & 导出
             </button>
         </div>
 
         <!-- Right Side: Preview & Results -->
-        <!-- Mobile: w-full, auto height. Desktop: flex-1, full height, scrollable -->
-        <div class="w-full lg:flex-1 bg-gray-50 p-4 md:p-8 flex flex-col items-center lg:h-full lg:overflow-y-auto">
+        <!-- 桌面端优化：移除固定高度和独立滚动条，让其自然延伸，使用浏览器主滚动条 -->
+        <div class="w-full lg:flex-1 bg-gray-50 p-4 md:p-8 flex flex-col items-center pb-20">
             
             <!-- Canvas Container -->
             <div class="w-full max-w-2xl mb-8">
                 <h3 class="text-center text-gray-400 mb-2 text-xs uppercase tracking-widest font-semibold">实时预览</h3>
-                
-                <!-- Wrapper for responsive scaling -->
                 <div id="canvasWrapper" class="w-full relative flex justify-center bg-transparent">
                     <div class="canvas-container shadow-2xl border-[3px] border-white rounded-lg overflow-hidden bg-white">
                         <canvas id="previewCanvas"></canvas>
@@ -124,7 +155,7 @@
             </div>
 
             <!-- Results Section -->
-            <div id="resultsArea" class="w-full max-w-5xl hidden flex flex-col gap-8 pb-10">
+            <div id="resultsArea" class="w-full max-w-5xl hidden flex flex-col gap-8">
                 
                 <!-- 1. Images Grid -->
                 <div class="bg-white p-4 md:p-6 rounded-xl shadow-sm border border-gray-200">
@@ -132,10 +163,18 @@
                         <h3 class="text-base md:text-lg font-bold text-gray-800 flex items-center gap-2">
                             🖼️ 图片结果
                         </h3>
-                        <button onclick="downloadAll()" class="text-xs md:text-sm bg-green-600 text-white px-3 py-1.5 rounded-lg hover:bg-green-700 transition flex items-center gap-1 shadow-sm">
-                            <span>📥 下载全部(ZIP)</span>
-                        </button>
+                        <div class="flex gap-2">
+                             <button onclick="downloadAll()" class="text-xs md:text-sm bg-green-600 text-white px-3 py-1.5 rounded-lg hover:bg-green-700 transition flex items-center gap-1 shadow-sm">
+                                <span>📥 下载全部(ZIP)</span>
+                            </button>
+                        </div>
                     </div>
+                    <p class="text-xs text-gray-400 mb-3 flex items-center gap-1">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        点击图片可查看大图，长按大图可保存到相册
+                    </p>
                     <div id="gallery" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-4">
                         <!-- Images will be injected here -->
                     </div>
@@ -161,9 +200,22 @@
     </main>
 
     <!-- Footer -->
-    <footer class="bg-gray-50 border-t border-gray-200 py-3 text-center text-xs text-gray-400 flex-none z-30">
+    <footer class="bg-gray-50 border-t border-gray-200 py-4 text-center text-xs text-gray-400 flex-none z-30">
         制作：by xhong &nbsp;&nbsp; 联系邮箱：zhouxhong@qq.com
     </footer>
+
+    <!-- Fullscreen Image Modal -->
+    <div id="imageModal" class="fixed inset-0 z-[60] hidden flex flex-col items-center justify-center bg-black/90 backdrop-blur-sm transition-opacity opacity-0" onclick="closeImageModal()">
+        <button class="absolute top-4 right-4 text-white/80 hover:text-white p-2 z-[70]">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+        </button>
+        <div class="w-full h-full flex items-center justify-center p-4 overflow-hidden" onclick="event.stopPropagation()">
+            <img id="modalImage" src="" class="max-w-full max-h-full object-contain rounded shadow-2xl select-none" alt="Preview">
+        </div>
+        <p class="absolute bottom-8 text-white/70 text-sm pointer-events-none">长按图片可保存到相册 / 点击背景关闭</p>
+    </div>
 
     <!-- Global Loader -->
     <div id="loader" class="fixed inset-0 loading-overlay flex flex-col items-center justify-center hidden">
@@ -178,19 +230,16 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/localforage/1.10.0/localforage.min.js"></script>
 
     <script>
-        // --- Constants & State ---
         const TARGET_TEXT = "营服名称";
         
         let fabricCanvas = null;
-        let pptData = {
-            bgImage: null, // Base64 string
-            width: 1280,
-            height: 720,
-            textBox: null // { x, y, width, height, fontSize, fontFamily, color }
-        };
-        let generatedImages = []; 
+        let pptData = { bgImage: null, width: 1280, height: 720, textBox: null };
+        let generatedImages = [];
+        
+        // --- High Performance OCR Engine ---
+        let ocrWorker = null;
+        let isOcrReady = false;
 
-        // --- Initialization ---
         window.onload = async () => {
             if (typeof fabric === 'undefined') {
                 alert("组件加载失败，请刷新页面。");
@@ -201,50 +250,50 @@
             await checkStoredPPT();
             setupEventListeners();
             
-            // Initial layout adjustment
             adjustPreviewScale();
-            // Listen for window resize to adjust canvas scale
             window.addEventListener('resize', () => {
                 requestAnimationFrame(adjustPreviewScale);
             });
+
+            // Initialize OCR in background immediately
+            initOcrEngine();
         };
+
+        async function initOcrEngine() {
+            try {
+                // Pre-load worker so it's ready when user uploads
+                ocrWorker = await Tesseract.createWorker('chi_sim');
+                isOcrReady = true;
+                
+                const statusEl = document.getElementById('ocrStatus');
+                statusEl.innerHTML = '<span class="w-2 h-2 rounded-full bg-green-400"></span> 引擎就绪';
+                statusEl.className = "text-xs text-green-600 flex items-center gap-1";
+                console.log("OCR Engine Ready");
+            } catch (error) {
+                console.error("OCR Init Failed", error);
+                document.getElementById('ocrStatus').innerText = "引擎初始化失败";
+            }
+        }
 
         function initCanvas() {
             try {
-                // Initialize canvas but dimensions will be set by pptData later
                 fabricCanvas = new fabric.Canvas('previewCanvas', {
                     enableRetinaScaling: true,
                     selection: false
                 });
-            } catch (error) {
-                console.error("Canvas Init Error:", error);
-            }
+            } catch (error) { console.error("Canvas Init Error:", error); }
         }
 
-        // --- Adaptive Scaling Logic ---
         function adjustPreviewScale() {
             if (!pptData.bgImage) return;
-
             const container = document.getElementById('canvasWrapper');
             const canvasContainerEl = document.querySelector('.canvas-container');
             if (!container || !canvasContainerEl) return;
-
-            // The desired width is the container width (minus padding automatically handled by parent flex)
             const availableWidth = container.clientWidth;
-            
-            // Calculate scale ratio based on PPT original width vs available screen width
-            // We limit max scale to 1 (don't upscale pixelatedly on huge screens if PPT is small, though usually PPT is HD)
-            // But usually we just shrink to fit.
             let scale = availableWidth / pptData.width;
-            
-            // On very wide screens, don't let it get ridiculously huge, maybe cap width
             if (scale > 1) scale = 1; 
-
-            // Apply Transform
             canvasContainerEl.style.transformOrigin = 'top left';
             canvasContainerEl.style.transform = `scale(${scale})`;
-            
-            // Adjust the wrapper height because 'transform' doesn't affect flow layout height
             container.style.height = `${pptData.height * scale}px`;
         }
 
@@ -259,61 +308,96 @@
             }
         }
 
-        // --- Storage Logic ---
-        async function checkStoredPPT() {
-            try {
-                const stored = await localforage.getItem('pptTemplateData');
-                if (stored) {
-                    pptData = stored;
-                    updatePPTStatus(true, "已恢复上次模板");
-                    renderPreview(TARGET_TEXT); 
+        // --- Optimized OCR Logic ---
+        async function handleOCRUpload(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            // Wait for worker if not ready
+            if (!isOcrReady) {
+                showLoader(true, "正在启动识别引擎...");
+                // Simple poll for readiness
+                while(!isOcrReady) {
+                    await new Promise(r => setTimeout(r, 500));
+                    if(!ocrWorker && !isOcrReady) { // Init failed or not started
+                         await initOcrEngine();
+                    }
                 }
-            } catch (e) { console.error(e); }
-        }
-
-        async function savePPTData() {
-            await localforage.setItem('pptTemplateData', pptData);
-        }
-
-        async function resetApp() {
-            if(confirm("确定要清除存储的模板和数据吗？")){
-                await localforage.clear();
-                location.reload();
             }
-        }
 
-        // --- Event Listeners ---
-        function setupEventListeners() {
-            document.getElementById('pptInput').addEventListener('change', handlePPTUpload);
-            document.getElementById('ocrInput').addEventListener('change', handleOCRUpload);
-            document.getElementById('textList').addEventListener('input', updateLineCount);
-            document.getElementById('generateBtn').addEventListener('click', startBatchGeneration);
-        }
+            showLoader(true, "正在智能识别...");
 
-        function updatePPTStatus(isReady, msg) {
-            const statusEl = document.getElementById('pptStatus');
-            const infoEl = document.getElementById('pptInfo');
-            const btn = document.getElementById('generateBtn');
+            try {
+                // Optimization: Resize image before sending to OCR
+                // Tesseract works best around 300dpi. Huge phone photos (4000px+) are slow.
+                const resizedImage = await resizeImageForOCR(file);
 
-            if (isReady) {
-                statusEl.innerText = "已就绪";
-                statusEl.className = "text-xs px-2 py-1 rounded bg-green-100 text-green-700";
-                infoEl.classList.remove('hidden');
-                document.getElementById('pptUploadArea').classList.add('hidden');
+                const ret = await ocrWorker.recognize(resizedImage);
+                const text = ret.data.text;
                 
-                if (pptData.textBox) btn.disabled = false;
-            } else {
-                statusEl.innerText = msg || "错误";
-                statusEl.className = "text-xs px-2 py-1 rounded bg-red-100 text-red-700";
+                const lines = text.split('\n')
+                                  .map(l => l.replace(/\s+/g, '').trim()) 
+                                  .filter(l => l.length > 0)
+                                  .map(l => l + "营服"); 
+                
+                document.getElementById('textList').value = lines.join('\n');
+                updateLineCount();
+
+                if (lines.length > 0) renderPreview(lines[0]);
+
+            } catch (err) {
+                console.error(err);
+                alert("OCR 识别失败: " + err.message);
+                // Try to restart worker if it crashed
+                isOcrReady = false;
+                initOcrEngine();
+            } finally {
+                showLoader(false);
+                // Clear input
+                e.target.value = ''; 
             }
         }
 
-        // --- PPT Parsing Logic ---
+        // Helper: Resize large images to speed up OCR (max width 2000px)
+        function resizeImageForOCR(file) {
+            return new Promise((resolve) => {
+                const img = new Image();
+                img.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    const MAX_WIDTH = 2000;
+                    let width = img.width;
+                    let height = img.height;
+
+                    if (width > MAX_WIDTH) {
+                        height *= MAX_WIDTH / width;
+                        width = MAX_WIDTH;
+                    }
+
+                    canvas.width = width;
+                    canvas.height = height;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, width, height);
+                    
+                    // Convert to base64 jpeg with reasonable quality
+                    resolve(canvas.toDataURL('image/jpeg', 0.8));
+                };
+                img.src = URL.createObjectURL(file);
+            });
+        }
+
+        function updateLineCount() {
+            const txt = document.getElementById('textList').value;
+            const count = txt.split('\n').filter(l => l.trim()).length;
+            document.getElementById('lineCount').innerText = `${count} 行`;
+            document.getElementById('generateBtn').disabled = count === 0 || !pptData.bgImage;
+        }
+
+        // --- Optimized PPT Upload ---
         async function handlePPTUpload(e) {
             const file = e.target.files[0];
             if (!file) return;
 
-            showLoader(true, "正在解析 PPT...");
+            showLoader(true, "正在极速解析 PPT...");
 
             try {
                 const zip = await JSZip.loadAsync(file);
@@ -328,21 +412,18 @@
                 const parser = new DOMParser();
                 const xmlDoc = parser.parseFromString(slideXmlStr, "text/xml");
                 
-                // --- Robust Text Finding ---
+                // Find Text
                 const allElements = xmlDoc.getElementsByTagName("*");
                 let targetShape = null;
                 let debugFoundTexts = [];
 
                 for (let i = 0; i < allElements.length; i++) {
                     const el = allElements[i];
-                    
                     if (el.localName === "p" && (el.prefix === "a" || el.namespaceURI?.includes("drawingml"))) {
                         const runTexts = [];
                         const textNodes = el.getElementsByTagName("*");
                         for(let k=0; k<textNodes.length; k++) {
-                            if(textNodes[k].localName === "t") {
-                                runTexts.push(textNodes[k].textContent);
-                            }
+                            if(textNodes[k].localName === "t") runTexts.push(textNodes[k].textContent);
                         }
                         const fullText = runTexts.length > 0 ? runTexts.join("") : el.textContent;
                         const normalizedText = fullText.replace(/\s+/g, "");
@@ -367,7 +448,6 @@
                      throw new Error(`首页未找到“${TARGET_TEXT}”。已识别到: ${debugFoundTexts.join(", ")}`);
                 }
 
-                // Extract Geometry
                 const getChild = (parent, localName) => {
                     if(!parent) return null;
                     for(let i=0; i<parent.children.length; i++) {
@@ -388,26 +468,21 @@
                 const emuW = parseInt(ext.getAttribute("cx"));
                 const emuH = parseInt(ext.getAttribute("cy"));
 
-                // Slide Dimensions
                 const presentationXml = await zip.file("ppt/presentation.xml").async("string");
                 const presDoc = parser.parseFromString(presentationXml, "text/xml");
-                const sldSzTags = presDoc.getElementsByTagName("*");
                 let sldSz = null;
+                const sldSzTags = presDoc.getElementsByTagName("*");
                 for(let i=0; i<sldSzTags.length; i++){
                     if(sldSzTags[i].localName === "sldSz") { sldSz = sldSzTags[i]; break; }
                 }
 
-                const slideWidthEmu = parseInt(sldSz.getAttribute("cx"));
-                const slideHeightEmu = parseInt(sldSz.getAttribute("cy"));
-
                 const scaleFactor = 96 / 914400; 
-                const canvasW = slideWidthEmu * scaleFactor;
-                const canvasH = slideHeightEmu * scaleFactor;
+                const canvasW = parseInt(sldSz.getAttribute("cx")) * scaleFactor;
+                const canvasH = parseInt(sldSz.getAttribute("cy")) * scaleFactor;
 
-                // Font Style
+                // Simple Font Extraction
                 let fontSize = 18;
                 let color = "#000000";
-                
                 try {
                     const textBody = getChild(targetShape, "txBody");
                     const p = getChild(textBody, "p");
@@ -424,13 +499,14 @@
                             if(sz) break; 
                         }
                     }
-                } catch(err) { console.log("Font extraction info:", err); }
+                } catch(err) {}
 
-                // Background
+                // Efficient Background Extraction
                 let bgBase64 = null;
                 const mediaFolder = zip.folder("ppt/media");
                 let maxUserInfo = { name: "", size: 0 };
                 
+                // First pass: only read metadata (fast)
                 if (mediaFolder) {
                     mediaFolder.forEach((relativePath, file) => {
                         if (relativePath.match(/\.(jpeg|jpg|png)$/i)) {
@@ -439,6 +515,7 @@
                             }
                         }
                     });
+                    // Second pass: only read the single winner file (slow but necessary)
                     if (maxUserInfo.name) {
                         bgBase64 = await mediaFolder.file(maxUserInfo.name).async("base64");
                         const ext = maxUserInfo.name.split('.').pop();
@@ -477,18 +554,17 @@
                 updatePPTStatus(false, "解析失败");
             } finally {
                 showLoader(false);
+                e.target.value = '';
             }
         }
-
-        // --- Rendering Logic ---
+        
+        // --- Rendering Logic (Restored) ---
         function renderPreview(text) {
             if (!pptData.bgImage) return;
 
-            // Set real dimensions
             fabricCanvas.setWidth(pptData.width);
             fabricCanvas.setHeight(pptData.height);
             
-            // Set Background
             fabric.Image.fromURL(pptData.bgImage, (img) => {
                 img.scaleToWidth(pptData.width);
                 img.scaleToHeight(pptData.height);
@@ -498,90 +574,113 @@
                 fabricCanvas.setBackgroundImage(img, fabricCanvas.renderAll.bind(fabricCanvas));
 
                 const tb = pptData.textBox;
-                const textObj = new fabric.Textbox(text, {
-                    left: tb.x,
-                    top: tb.y,
-                    width: tb.w,
-                    height: tb.h, 
-                    fontSize: tb.fontSize,
-                    fill: tb.color,
-                    fontFamily: 'SimHei, STHeiti, sans-serif',
-                    textAlign: 'center',
-                    originX: 'left',
-                    originY: 'top',
-                    editable: false
-                });
-                
-                fabricCanvas.add(textObj);
+                if (tb) {
+                    const textObj = new fabric.Textbox(text, {
+                        left: tb.x,
+                        top: tb.y,
+                        width: tb.w,
+                        height: tb.h, 
+                        fontSize: tb.fontSize,
+                        fill: tb.color,
+                        fontFamily: 'SimHei, STHeiti, sans-serif',
+                        textAlign: 'center',
+                        originX: 'left',
+                        originY: 'top',
+                        editable: false
+                    });
+                    
+                    fabricCanvas.add(textObj);
+                }
                 fabricCanvas.renderAll();
-                
-                // Trigger responsive scaling after render
                 adjustPreviewScale();
             });
         }
 
-        // --- OCR Logic ---
-        async function handleOCRUpload(e) {
-            const file = e.target.files[0];
-            if (!file) return;
+        // --- Common Logic ---
+        function updatePPTStatus(isReady, msg) {
+            const statusEl = document.getElementById('pptStatus');
+            const infoEl = document.getElementById('pptInfo');
+            const btn = document.getElementById('generateBtn');
 
-            showLoader(true, "正在识别名单...");
-
-            try {
-                const worker = await Tesseract.createWorker('chi_sim'); 
-                const ret = await worker.recognize(file);
-                const text = ret.data.text;
-                
-                // Clean Text: Remove whitespace and append "营服"
-                const lines = text.split('\n')
-                                  .map(l => l.replace(/\s+/g, '').trim()) 
-                                  .filter(l => l.length > 0)
-                                  .map(l => l + "营服"); 
-                
-                document.getElementById('textList').value = lines.join('\n');
-                updateLineCount();
-                
-                await worker.terminate();
-
-                if (lines.length > 0) renderPreview(lines[0]);
-
-            } catch (err) {
-                alert("OCR 识别失败: " + err.message);
-            } finally {
-                showLoader(false);
+            if (isReady) {
+                statusEl.innerText = "已就绪";
+                statusEl.className = "text-xs px-2 py-1 rounded bg-green-100 text-green-700";
+                infoEl.classList.remove('hidden');
+                document.getElementById('pptUploadArea').classList.add('hidden');
+                if (pptData.textBox) btn.disabled = false;
+            } else {
+                statusEl.innerText = msg || "错误";
+                statusEl.className = "text-xs px-2 py-1 rounded bg-red-100 text-red-700";
             }
         }
 
-        function updateLineCount() {
-            const txt = document.getElementById('textList').value;
-            const count = txt.split('\n').filter(l => l.trim()).length;
-            document.getElementById('lineCount').innerText = `${count} 行`;
-            
-            const btn = document.getElementById('generateBtn');
-            btn.disabled = count === 0 || !pptData.bgImage;
+        async function checkStoredPPT() {
+            try {
+                const stored = await localforage.getItem('pptTemplateData');
+                if (stored) {
+                    pptData = stored;
+                    updatePPTStatus(true, "已恢复上次模板");
+                    renderPreview(TARGET_TEXT); 
+                }
+            } catch (e) { console.error(e); }
         }
 
-        // --- Batch Generation ---
+        async function savePPTData() { await localforage.setItem('pptTemplateData', pptData); }
+
+        async function resetApp() {
+            if(confirm("确定要清除存储的模板和数据吗？")){
+                await localforage.clear();
+                location.reload();
+            }
+        }
+
+        function setupEventListeners() {
+            document.getElementById('pptInput').addEventListener('change', handlePPTUpload);
+            document.getElementById('ocrInput').addEventListener('change', handleOCRUpload);
+            document.getElementById('textList').addEventListener('input', updateLineCount);
+            document.getElementById('generateBtn').addEventListener('click', startBatchGeneration);
+            document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeImageModal(); });
+        }
+
+        // --- Modals ---
+        function openImageModal(src) {
+            const modal = document.getElementById('imageModal');
+            document.getElementById('modalImage').src = src;
+            modal.classList.remove('hidden');
+            setTimeout(() => modal.classList.remove('opacity-0'), 10);
+        }
+
+        function closeImageModal() {
+            const modal = document.getElementById('imageModal');
+            modal.classList.add('opacity-0');
+            setTimeout(() => {
+                modal.classList.add('hidden');
+                document.getElementById('modalImage').src = "";
+            }, 300);
+        }
+
+        // --- Batch Gen ---
         async function startBatchGeneration() {
             const txt = document.getElementById('textList').value;
             const lines = txt.split('\n').filter(l => l.trim());
-            
             if (lines.length === 0) return;
             
             showLoader(true, "正在生成高清图片...");
             generatedImages = [];
-            const gallery = document.getElementById('gallery');
-            gallery.innerHTML = '';
+            document.getElementById('gallery').innerHTML = '';
             document.getElementById('resultsArea').classList.remove('hidden');
             
-            // Show Blessing Text
-            const blessingTextEl = document.getElementById('blessingText');
-            const blessingLines = lines.map(line => `恭喜${line}当日高套封闭[庆祝][庆祝][庆祝]`);
-            blessingTextEl.value = blessingLines.join('\n');
+            let blessingTemplate = document.getElementById('blessingTemplate').value;
+            if (!blessingTemplate || blessingTemplate.trim() === '') blessingTemplate = "恭喜XXX营服当日高套封闭[庆祝][庆祝][庆祝]";
+            
+            const blessingLines = lines.map(line => {
+                const cleanName = line.replace(/营服$/, '');
+                return blessingTemplate.replace(/XXX/g, cleanName);
+            });
+            document.getElementById('blessingText').value = blessingLines.join('\n');
 
             for (let i = 0; i < lines.length; i++) {
                 const line = lines[i];
-                
                 const objs = fabricCanvas.getObjects();
                 if (objs.length > 0 && objs[0].type === 'textbox') {
                     objs[0].set('text', line);
@@ -590,70 +689,55 @@
                     renderPreview(line);
                 }
 
-                await new Promise(r => setTimeout(r, 50)); // Small delay for rendering
+                await new Promise(r => setTimeout(r, 20)); // Minimal delay
 
-                // Export at 3x resolution for clarity
-                const dataUrl = fabricCanvas.toDataURL({
-                    format: 'png',
-                    quality: 1,
-                    multiplier: 3 
-                });
-
+                const dataUrl = fabricCanvas.toDataURL({ format: 'png', quality: 1, multiplier: 3 });
                 generatedImages.push({ name: `${line}.png`, data: dataUrl });
 
                 const imgCard = document.createElement('div');
-                imgCard.className = "group relative aspect-video bg-gray-100 rounded-lg overflow-hidden border cursor-pointer";
+                imgCard.className = "group relative aspect-video bg-gray-100 rounded-lg overflow-hidden border cursor-pointer shadow-sm active:scale-95 transition-transform duration-100";
+                imgCard.onclick = () => openImageModal(dataUrl);
                 imgCard.innerHTML = `
-                    <img src="${dataUrl}" class="w-full h-full object-cover">
-                    <div class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-white text-xs font-bold p-2 text-center">
+                    <img src="${dataUrl}" class="w-full h-full object-cover pointer-events-none lg:pointer-events-auto">
+                    <div class="absolute inset-0 bg-black/50 opacity-0 lg:group-hover:opacity-100 transition flex items-center justify-center text-white text-xs font-bold p-2 text-center pointer-events-none">
+                        点击查看 / 长按保存
+                    </div>
+                    <div class="lg:hidden absolute bottom-0 left-0 right-0 bg-black/40 text-white text-[10px] text-center py-1 truncate px-1">
                         ${line}
                     </div>
                 `;
-                gallery.appendChild(imgCard);
+                document.getElementById('gallery').appendChild(imgCard);
             }
 
             showLoader(false);
-            
-            // Scroll to results on mobile
-            if (window.innerWidth < 1024) {
-                document.getElementById('resultsArea').scrollIntoView({ behavior: 'smooth' });
-            }
+            if (window.innerWidth < 1024) document.getElementById('resultsArea').scrollIntoView({ behavior: 'smooth' });
         }
 
         async function downloadAll() {
             if (generatedImages.length === 0) return;
-
             showLoader(true, "正在打包下载...");
             const zip = new JSZip();
             const folder = zip.folder("generated_ppts");
-
             generatedImages.forEach(img => {
                 const base64Data = img.data.split(',')[1];
                 folder.file(img.name, base64Data, { base64: true });
             });
-
             const content = await zip.generateAsync({ type: "blob" });
-            
             const a = document.createElement("a");
             a.href = URL.createObjectURL(content);
             a.download = "PPT_Batch_Images.zip";
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
-            
             showLoader(false);
         }
 
         function copyBlessingText() {
             const el = document.getElementById('blessingText');
             if(!el.value) return;
-            
             el.select();
             el.setSelectionRange(0, 99999);
-            
-            navigator.clipboard.writeText(el.value).then(() => {
-                alert("复制成功！");
-            }).catch(() => {
+            navigator.clipboard.writeText(el.value).then(() => alert("复制成功！")).catch(() => {
                 document.execCommand('copy');
                 alert("复制成功！");
             });
