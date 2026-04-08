@@ -575,19 +575,28 @@
 
                 const tb = pptData.textBox;
                 if (tb) {
-                    const textObj = new fabric.Textbox(text, {
-                        left: tb.x,
-                        top: tb.y,
-                        width: tb.w,
-                        height: tb.h, 
+                    // 优化：使用 fabric.Text 确保单行，设置基准点为框中心
+                    const textObj = new fabric.Text(text, {
+                        left: tb.x + tb.w / 2,
+                        top: tb.y + tb.h / 2,
                         fontSize: tb.fontSize,
                         fill: tb.color,
                         fontFamily: 'SimHei, STHeiti, sans-serif',
-                        textAlign: 'center',
-                        originX: 'left',
-                        originY: 'top',
+                        originX: 'center',
+                        originY: 'center',
                         editable: false
                     });
+                    
+                    // 智能排版逻辑
+                    const maxWidth = tb.w * 0.95; // 留出 5% 的安全边距
+                    if (textObj.width > maxWidth) {
+                        // 1. 如果名字过长，自动缩小字号适配宽度
+                        const scale = maxWidth / textObj.width;
+                        textObj.set('fontSize', Math.floor(tb.fontSize * scale));
+                    } else if (text.length <= 5) {
+                        // 2. 如果名字较短，自动增加字间距使其更美观
+                        textObj.set('charSpacing', 200); 
+                    }
                     
                     fabricCanvas.add(textObj);
                 }
@@ -682,8 +691,26 @@
             for (let i = 0; i < lines.length; i++) {
                 const line = lines[i];
                 const objs = fabricCanvas.getObjects();
-                if (objs.length > 0 && objs[0].type === 'textbox') {
-                    objs[0].set('text', line);
+                const textObj = objs.find(o => o.type === 'text' || o.type === 'textbox');
+                
+                if (textObj && pptData.textBox) {
+                    const tb = pptData.textBox;
+                    // 生成新词前，先重置为默认字体大小和间距
+                    textObj.set({
+                        text: line,
+                        fontSize: tb.fontSize,
+                        charSpacing: 0
+                    });
+                    
+                    // 重新计算并应用智能排版
+                    const maxWidth = tb.w * 0.95;
+                    if (textObj.width > maxWidth) {
+                        const scale = maxWidth / textObj.width;
+                        textObj.set('fontSize', Math.floor(tb.fontSize * scale));
+                    } else if (line.length <= 5) {
+                        textObj.set('charSpacing', 200);
+                    }
+                    
                     fabricCanvas.renderAll();
                 } else {
                     renderPreview(line);
